@@ -1,0 +1,3 @@
+C:/Users/artem/CLionProjects/Chat_server_project/cmake-build-debug/CMakeFiles/Chat_server_project.dir
+C:/Users/artem/CLionProjects/Chat_server_project/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/artem/CLionProjects/Chat_server_project/cmake-build-debug/CMakeFiles/rebuild_cache.dir
