@@ -5,46 +5,139 @@
 #include <winsock2.h>
 #include "Client.h"
 
+//TODO CHANGE CHAR TO STRING EVERYWHERE!!!!!!!!!!! Exit command, different check of format message, registartion with checking differences of names
+
 std::vector<Client> clients;
 std::mutex clientsMutex;
 
-std::vector<SOCKET> find_id(const std::vector<Client>& clients1, int id)
+std::string find_name_from_socket(SOCKET clientSocket)
+{
+    for (int i=0; i<clients.size(); i++)
+    {
+        if (clients[i].socket==clientSocket)
+            return clients[i].name;
+    }
+    return "Unknown error in name of sender";
+}
+
+
+std::vector<SOCKET> find_socket_from_name(const std::vector<std::string>& send_to_names)
 {
     std::vector<SOCKET> answer;
-    for (int i=0; i<clients1.size(); i++)
+    for (int j=0; j<send_to_names.size(); j++)
     {
-        if (clients1[i].id==id)
-            answer.push_back(clients1[i].socket);
+        for (int i=0; i<clients.size(); i++)
+        {
+            if (clients[i].name==send_to_names[i])
+            {
+                answer.push_back(clients[i].socket);
+                break;
+            }
+        }
     }
     return answer;
 }
 
+void Broadcast(SOCKET clientSocket, const std::string& mes)
+{
+    std::string name_sender= find_name_from_socket(clientSocket);
+    std::string buff="Сообщение от: "+name_sender+"\n";
+    buff+=mes;
+    for (int i=0; i<clients.size(); i++)
+    {
+        if (clients[i].socket==clientSocket)
+            continue;
+        send(clients[i].socket, &(buff[0]), buff.length(), 0);
+    }
+}
+
+void Group_message(SOCKET clientSocket, const std::string& mes, const std::vector<std::string>& send_to_names)
+{
+    std::vector<SOCKET> socket_send=find_socket_from_name(send_to_names);
+    std::string name_sender= find_name_from_socket(clientSocket);
+    std::string buff="Сообщение от: "+name_sender+"\n";
+    buff+=mes;
+    for (int i=0; i<socket_send.size(); i++)
+        send(socket_send[i], &(buff[0]), buff.length(), 0);
+}
+
+void Private_message(SOCKET clientSocket, const std::string& mes, const std::vector<std::string>& send_to_names)
+{
+    if (send_to_names.size()==0 || send_to_names.size()>1)
+    {
+        std::string buff="Вы ввели команду pravate, однако кол-во людей кому вы хотите отправить не равно 1\n";
+        send(clientSocket, &(buff[0]), buff.length(), 0);
+    }
+    else
+    {
+        std::string name_sender= find_name_from_socket(clientSocket);
+        std::string buff="Сообщение от: "+name_sender+"\n";
+        buff+=mes;
+        std::vector<SOCKET> socket_send=find_socket_from_name(send_to_names);
+        send(socket_send[0], &(buff[0]), buff.length(), 0);
+    }
+}
+
+
+
+void Reformat_message(const std::string& text, std::string& where, std::vector<std::string>& send_to_names, std::string& mes)
+{
+    long long i=0;
+    while(text[i]!=':')
+    {
+        where+=text[i];
+        i++;
+    }
+    i++;
+    while(text[i]!=':')
+    {
+        std::string temporary_name;
+        while(text[i]!=',')
+        {
+            temporary_name+=text[i];
+            i++;
+        }
+        send_to_names.push_back(temporary_name);
+        i++;
+    }
+    i++;
+    while(text[i]!='\0')
+    {
+        mes+=text[i];
+        i++;
+    }
+}
+
+//Формат сообщения:
+//куда(public, private, group); кому(имя,имя,...); сообщение
+//"public:dasha,masha,sasha:Hello"
+
 void clientHandler(SOCKET clientSocket) {
     // Обработка клиента
     // Пример чтения сообщений от клиента и отправки ответов
-    char buffer[1024];
+    std::string buffer;
     while (true) {
-        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+        int bytesReceived = recv(clientSocket, &(buffer[0]), buffer.length(), 0);
         if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
             break;
         }
         buffer[bytesReceived] = '\0'; // Добавляем завершающий символ строки
-        int id_send=buffer[0]-'0';
-        std::cout<<buffer[0]<<" ";
-        std::cout<<id_send<<"\n";
-        std::cout << "Сообщение от клиента: " << buffer << std::endl;
-        std::vector<SOCKET> answer= find_id(clients, id_send);
-        //buffer[0]=' ';
-        std::cout<<"len_answer="<<answer.size();
-        std::string message=buffer;
-        for (int i=0; i<answer.size(); i++)
+        std::string where="";
+        std::vector<std::string> send_to_names;
+        std::string mes="";
+        Reformat_message(buffer, where, send_to_names, mes);
+        if (where=="public")
         {
-            std::cout<<"send_socket:"<<answer[i]<<"\n";
-            //std::cout<<"send:  "<<send(answer[i], buffer, sizeof(buffer), 0);
-            std::cout<<"send:  "<<send(answer[i], &(message[0]), message.length(), 0);
+            Broadcast(clientSocket, mes);
         }
-        // Отправка ответа клиенту (здесь можно добавить логику обработки сообщения)
-        //send(clientSocket, buffer, strlen(buffer), 0);
+        else if(where=="group")
+        {
+            Group_message(clientSocket, mes, send_to_names);
+        }
+        else
+        {
+            Private_message(clientSocket, mes, send_to_names);
+        }
     }
 
     // Удаляем клиента из списка после завершения соединения
