@@ -3,31 +3,55 @@
 #include <mutex>
 #include <vector>
 #include <winsock2.h>
+#include "Client.h"
 
-std::vector<SOCKET> clients;
+std::vector<Client> clients;
 std::mutex clientsMutex;
 
+std::vector<SOCKET> find_id(const std::vector<Client>& clients1, int id)
+{
+    std::vector<SOCKET> answer;
+    for (int i=0; i<clients1.size(); i++)
+    {
+        if (clients1[i].id==id)
+            answer.push_back(clients1[i].socket);
+    }
+    return answer;
+}
+
 void clientHandler(SOCKET clientSocket) {
-    // é°‡†°Æ‚™† ™´®•≠‚†
-    // è‡®¨•‡ Á‚•≠®Ô ·ÆÆ°È•≠®© Æ‚ ™´®•≠‚† ® Æ‚Ø‡†¢™® Æ‚¢•‚Æ¢
+    // –û–±—Ä–∞–±–æ—Ç–∫–∞ –∫–ª–∏–µ–Ω—Ç–∞
+    // –ü—Ä–∏–º–µ—Ä —á—Ç–µ–Ω–∏—è —Å–æ–æ–±—â–µ–Ω–∏–π –æ—Ç –∫–ª–∏–µ–Ω—Ç–∞ –∏ –æ—Ç–ø—Ä–∞–≤–∫–∏ –æ—Ç–≤–µ—Ç–æ–≤
     char buffer[1024];
     while (true) {
         int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
             break;
         }
-        buffer[bytesReceived] = '\0'; // ÑÆ°†¢´Ô•¨ ß†¢•‡Ë†ÓÈ®© ·®¨¢Æ´ ·‚‡Æ™®
-        std::cout << "ëÆÆ°È•≠®• Æ‚ ™´®•≠‚†: " << buffer << std::endl;
-
-        // é‚Ø‡†¢™† Æ‚¢•‚† ™´®•≠‚„ (ß§•·Ï ¨Æ¶≠Æ §Æ°†¢®‚Ï ´Æ£®™„ Æ°‡†°Æ‚™® ·ÆÆ°È•≠®Ô)
-        // send(clientSocket, response, strlen(response), 0);
+        buffer[bytesReceived] = '\0'; // –î–æ–±–∞–≤–ª—è–µ–º –∑–∞–≤–µ—Ä—à–∞—é—â–∏–π —Å–∏–º–≤–æ–ª —Å—Ç—Ä–æ–∫–∏
+        int id_send=buffer[0]-'0';
+        std::cout<<buffer[0]<<" ";
+        std::cout<<id_send<<"\n";
+        std::cout << "–°–æ–æ–±—â–µ–Ω–∏–µ –æ—Ç –∫–ª–∏–µ–Ω—Ç–∞: " << buffer << std::endl;
+        std::vector<SOCKET> answer= find_id(clients, id_send);
+        //buffer[0]=' ';
+        std::cout<<"len_answer="<<answer.size();
+        std::string message=buffer;
+        for (int i=0; i<answer.size(); i++)
+        {
+            std::cout<<"send_socket:"<<answer[i]<<"\n";
+            //std::cout<<"send:  "<<send(answer[i], buffer, sizeof(buffer), 0);
+            std::cout<<"send:  "<<send(answer[i], &(message[0]), message.length(), 0);
+        }
+        // –û—Ç–ø—Ä–∞–≤–∫–∞ –æ—Ç–≤–µ—Ç–∞ –∫–ª–∏–µ–Ω—Ç—É (–∑–¥–µ—Å—å –º–æ–∂–Ω–æ –¥–æ–±–∞–≤–∏—Ç—å –ª–æ–≥–∏–∫—É –æ–±—Ä–∞–±–æ—Ç–∫–∏ —Å–æ–æ–±—â–µ–Ω–∏—è)
+        //send(clientSocket, buffer, strlen(buffer), 0);
     }
 
-    // ì§†´Ô•¨ ™´®•≠‚† ®ß ·Ø®·™† ØÆ·´• ß†¢•‡Ë•≠®Ô ·Æ•§®≠•≠®Ô
+    // –£–¥–∞–ª—è–µ–º –∫–ª–∏–µ–Ω—Ç–∞ –∏–∑ —Å–ø–∏—Å–∫–∞ –ø–æ—Å–ª–µ –∑–∞–≤–µ—Ä—à–µ–Ω–∏—è —Å–æ–µ–¥–∏–Ω–µ–Ω–∏—è
     {
         std::lock_guard<std::mutex> lock(clientsMutex);
         for (auto it = clients.begin(); it != clients.end(); ++it) {
-            if (*it == clientSocket) {
+            if (it->socket == clientSocket) {
                 clients.erase(it);
                 break;
             }
@@ -38,43 +62,43 @@ void clientHandler(SOCKET clientSocket) {
 }
 
 int main() {
-    // à≠®Ê®†´®ß†Ê®Ô Winsock
+    // –ò–Ω–∏—Ü–∏–∞–ª–∏–∑–∞—Ü–∏—è Winsock
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-    // ëÆß§†≠®• ·Æ™•‚† ·•‡¢•‡†
+    // –°–æ–∑–¥–∞–Ω–∏–µ —Å–æ–∫–µ—Ç–∞ —Å–µ—Ä–≤–µ—Ä–∞
     SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-    // ç†·‚‡Æ©™† †§‡•·† ·•‡¢•‡†
+    // –ù–∞—Å—Ç—Ä–æ–π–∫–∞ –∞–¥—Ä–µ—Å–∞ —Å–µ—Ä–≤–µ—Ä–∞
     SOCKADDR_IN serverAddr;
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     serverAddr.sin_port = htons(8080);
 
-    // è‡®¢Ôß™† ·Æ™•‚† ™ †§‡•·„ ·•‡¢•‡†
+    // –ü—Ä–∏–≤—è–∑–∫–∞ —Å–æ–∫–µ—Ç–∞ –∫ –∞–¥—Ä–µ—Å—É —Å–µ—Ä–≤–µ—Ä–∞
     bind(serverSocket, (SOCKADDR*)&serverAddr, sizeof(serverAddr));
 
-    // è‡Æ·´„Ë®¢†≠®• ØÆ§™´ÓÁ•≠®©
+    // –ü—Ä–æ—Å–ª—É—à–∏–≤–∞–Ω–∏–µ –ø–æ–¥–∫–ª—é—á–µ–Ω–∏–π
     listen(serverSocket, SOMAXCONN);
 
-    std::cout << "ë•‡¢•‡ ß†Ø„È•≠. é¶®§†≠®• ØÆ§™´ÓÁ•≠®©...\n";
+    std::cout << "–°–µ—Ä–≤–µ—Ä –∑–∞–ø—É—â–µ–Ω. –û–∂–∏–¥–∞–Ω–∏–µ –ø–æ–¥–∫–ª—é—á–µ–Ω–∏–π...\n";
 
     while (true) {
-        // è‡®≠Ô‚®• ≠Æ¢Æ£Æ ØÆ§™´ÓÁ•≠®Ô
+        // –ü—Ä–∏–Ω—è—Ç–∏–µ –Ω–æ–≤–æ–≥–æ –ø–æ–¥–∫–ª—é—á–µ–Ω–∏—è
         SOCKET clientSocket = accept(serverSocket, NULL, NULL);
-
-        // ÑÆ°†¢´•≠®• ™´®•≠‚† ¢ ·Ø®·Æ™
-        {
-            std::lock_guard<std::mutex> lock(clientsMutex);
-            clients.push_back(clientSocket);
-        }
-
-        // á†Ø„·™ Æ°‡†°Æ‚Á®™† ™´®•≠‚† ¢ Æ‚§•´Ï≠Æ¨ ØÆ‚Æ™•
+        // –î–æ–±–∞–≤–ª–µ–Ω–∏–µ –∫–ª–∏–µ–Ω—Ç–∞ –≤ —Å–ø–∏—Å–æ–∫
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        Client temporary_client;
+        temporary_client.socket=clientSocket;
+        clients.push_back(temporary_client);
+        std::cout<<"–ü–æ–¥–∫–ª—é—á–∏–ª—Å—è –Ω–æ–≤—ã–π –∫–ª–∏–µ–Ω—Ç. ID:"<<clients[clients.size()-1].id<<"\n";
+        std::cout<<"Socket:"<<clientSocket<<"\n";
+        // –ó–∞–ø—É—Å–∫ –æ–±—Ä–∞–±–æ—Ç—á–∏–∫–∞ –∫–ª–∏–µ–Ω—Ç–∞ –≤ –æ—Ç–¥–µ–ª—å–Ω–æ–º –ø–æ—Ç–æ–∫–µ
         std::thread clientThread(clientHandler, clientSocket);
-        clientThread.detach(); // é‚·Æ•§®≠Ô•¨ ØÆ‚Æ™, Á‚Æ°Î ≠• ¶§†‚Ï •£Æ ß†¢•‡Ë•≠®Ô
+        clientThread.detach(); // –û—Ç—Å–æ–µ–¥–∏–Ω—è–µ–º –ø–æ—Ç–æ–∫, —á—Ç–æ–±—ã –Ω–µ –∂–¥–∞—Ç—å –µ–≥–æ –∑–∞–≤–µ—Ä—à–µ–Ω–∏—è
     }
 
-    // á†™‡Î‚®• ·Æ™•‚† ·•‡¢•‡† ® ß†¢•‡Ë•≠®• ‡†°Æ‚Î Winsock
+    // –ó–∞–∫—Ä—ã—Ç–∏–µ —Å–æ–∫–µ—Ç–∞ —Å–µ—Ä–≤–µ—Ä–∞ –∏ –∑–∞–≤–µ—Ä—à–µ–Ω–∏–µ —Ä–∞–±–æ—Ç—ã Winsock
     closesocket(serverSocket);
     WSACleanup();
 
