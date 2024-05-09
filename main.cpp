@@ -6,67 +6,130 @@
 #include "Client.h"
 #include <fstream>
 #include <cstdio>
-//TODO CHANGE CHAR TO STRING EVERYWHERE!!!!!!!!!!! Exit command, different check of format message, registration with checking differences of names, broadcast about new user, set name command
+//TODO CHANGE CHAR TO STRING EVERYWHERE!!!!!!!!!!! check format of email, запрещать писать сообщение если не зашли в акк, если нет такого имении в group то писать, функция show_online, история сообщений
+
+
 
 std::vector<Client> clients;
 std::mutex clientsMutex;
 
+
+
+void print_users()
+{
+    for (const auto & client : clients)
+    {
+        client.print();
+    }
+}
+
+std::string extract_name_from_string(const std::string& text, long long i)
+{
+    std::string user_name;
+    while(text[i]!='\0')
+    {
+        user_name+=text[i];
+        i++;
+    }
+    std::cout<<user_name;
+    return user_name;
+}
+
 std::string find_name_from_socket(SOCKET clientSocket)
 {
-    for (long long i=0; i<clients.size(); i++)
+    for (auto & client : clients)
     {
-        if (clients[i].socket==clientSocket)
-            return clients[i].name;
+        if (client.socket==clientSocket)
+            return client.name;
     }
     return "Unknown error in name of sender";
 }
 
 Client* find_client_from_socket(SOCKET clientSocket)
 {
-    for (int i=0; i<clients.size(); i++)
+    for (auto & client : clients)
     {
-        if (clients[i].socket==clientSocket)
+        if (client.socket==clientSocket)
         {
-            return (&clients[i]);
+            return (&client);
         }
+    }
+}
+
+void end_registration(SOCKET clientSocket)
+{
+    Client* current_client= find_client_from_socket(clientSocket);
+    if (current_client->email=="email" || current_client->password=="password" || current_client->name=="noname")
+    {
+        std::string buff="Для окончания регистрации введите все данные.";
+        send(clientSocket, buff.c_str(), buff.size(), 0);
+        return;
+    }
+    std::string mes=current_client->name+" зарегистрировался и подключился к серверу." ;
+    std::string buff="Вы успешно зарегистрировались! Добро пожаловать "+current_client->name;
+    send(clientSocket, buff.c_str(), buff.size(), 0);
+    for (auto & client : clients)
+    {
+        if (client.socket==clientSocket)
+            continue;
+        if (client.email=="email" || client.password=="password" || client.name=="noname")
+            continue;
+        send(client.socket, mes.c_str(), mes.size(), 0);
+    }
+}
+
+void end_entry(SOCKET clientSocket)
+{
+    Client* current_client= find_client_from_socket(clientSocket);
+    std::string mes=current_client->name+" подключился к серверу." ;
+    std::string buff="Вы успешно вошли в свой профиль! С возвращением "+current_client->name+"!)";
+    send(clientSocket, buff.c_str(), buff.size(), 0);
+    for (auto & client : clients)
+    {
+        if (client.socket==clientSocket)
+            continue;
+        if (client.email=="email" || client.password=="password" || client.name=="noname")
+            continue;
+        send(client.socket, mes.c_str(), mes.size(), 0);
     }
 }
 
 Client* find_client_from_email(const std::string& email_user)
 {
-    for (int i=0; i<clients.size(); i++)
+    for (auto & client : clients)
     {
-        if (clients[i].email==email_user)
+        if (client.email==email_user)
         {
-            return (&clients[i]);
+            return (&client);
         }
     }
 }
 
 Client* find_client_from_name(const std::string& name_user)
 {
-    for (int i=0; i<clients.size(); i++)
+    for (auto & client : clients)
     {
-        if (clients[i].name==name_user)
+        if (client.name==name_user)
         {
-            return (&clients[i]);
+            return (&client);
         }
     }
 }
 
 Client* find_client_from_password(const std::string& password_user)
 {
-    for (int i=0; i<clients.size(); i++)
+    for (auto & client : clients)
     {
-        if (clients[i].password==password_user)
+        if (client.password==password_user)
         {
-            return (&clients[i]);
+            return (&client);
         }
     }
 }
 
 void exit(SOCKET clientSocket)
 {
+    std::string user_name= find_name_from_socket(clientSocket);
     std::lock_guard<std::mutex> lock(clientsMutex);
     for (auto it = clients.begin(); it != clients.end(); ++it) {
         if (it->socket == clientSocket) {
@@ -74,15 +137,168 @@ void exit(SOCKET clientSocket)
             break;
         }
     }
+    for (auto & client : clients)
+    {
+        if (client.email=="email" || client.password=="password" || client.name=="noname")
+            continue;
+        std::string mes= "Пользователь " +user_name+" вышел.";
+        send(client.socket, mes.c_str(), mes.size(), 0);
+    }
+    closesocket(clientSocket);
+}
+
+void Broadcast(SOCKET clientSocket, const std::string& mes)
+{
+    std::string name_sender= find_name_from_socket(clientSocket);
+    std::string buff=name_sender+":\n";
+    buff+=mes;
+    for (auto & client : clients)
+    {
+        if (client.socket==clientSocket)
+            continue;
+        if (client.email=="email" || client.password=="password" || client.name=="noname")
+            continue;
+        send(client.socket, buff.c_str(), buff.size(), 0);
+    }
 }
 
 void set_name(SOCKET clientSocket, const std::string& text, long long i)
 {
+    Client* current_client= find_client_from_socket(clientSocket);
     std::string user_name;
     while(text[i]!='\0')
     {
         user_name+=text[i];
         i++;
+    }
+    if(user_name.empty())
+    {
+        std::string buff="Неправильный формат данных";
+        send(clientSocket, buff.c_str(), buff.size(), 0);
+        return;
+    }
+    if(user_name.find(':')!=std::string::npos)
+    {
+        std::string err="Запрещено использовать ':' в имени.";
+        send(clientSocket, err.c_str(), err.size(), 0);
+        return;
+    }
+    if (user_name=="noname")
+    {
+        std::string err="Данное имя запрещено использовать. Попробуйте другое.";
+        send(clientSocket, err.c_str(), err.size(), 0);
+        return;
+    }
+    std::string line;
+    std::ifstream in(R"(C:\Users\Public\include\names.txt)");
+    int key=1;
+    if(in.is_open())
+    {
+        while(std::getline(in,line))
+        {
+            //key=1;
+            if (line==user_name)
+            {
+                key=0;
+                std::string err="Данное имя уже используется. Попробуйте другое.";
+                send(clientSocket, err.c_str(), err.size(), 0);
+                return;
+            }
+        }
+    }
+    else
+    {
+        std::cout<<"Не получилось открыть файл names.txt";
+    }
+    in.close();
+    if (current_client->name=="noname")
+    {
+        if (key)
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            std::ofstream out(R"(C:\Users\Public\include\names.txt)", std::ios::app);
+            if (out.is_open())
+            {
+                out<<user_name<<std::endl;
+            }
+            out.close();
+            std::ifstream in1(R"(C:\Users\Public\include\data_clients.txt)");
+            std::ofstream out2(R"(C:\Users\Public\include\temporary_data_clients.txt)", std::ios::trunc);
+            if(in1.is_open() && out2.is_open())
+            {
+                while(std::getline(in1,line))
+                {
+                    if(line.find(current_client->email)!=std::string::npos)
+                    {
+                        out2<<current_client->email<<":"<<current_client->password<<":"<<user_name<<std::endl;
+                    }
+                    else
+                    {
+                        out2<<line<<std::endl;
+                    }
+                }
+            }
+            in1.close();
+            out2.close();
+            rename(R"(C:\Users\Public\include\data_clients.txt)", R"(C:\Users\Public\include\popa.txt)");
+            rename(R"(C:\Users\Public\include\temporary_data_clients.txt)", R"(C:\Users\Public\include\data_clients.txt)");
+            rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_data_clients.txt)");
+            if (current_client->name!="noname")
+                Broadcast(clientSocket, current_client->name+" сменил имя, теперь он "+user_name);
+            current_client->name=user_name;
+        }
+    }
+    else
+    {
+        if(key)
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            std::ifstream in1(R"(C:\Users\Public\include\data_clients.txt)");
+            std::ofstream out2(R"(C:\Users\Public\include\temporary_data_clients.txt)", std::ios::trunc);
+            if(in1.is_open() && out2.is_open())
+            {
+                while(std::getline(in1,line))
+                {
+                    if(line.find(current_client->email)!=std::string::npos)
+                    {
+                        out2<<current_client->email<<":"<<current_client->password<<":"<<user_name<<std::endl;
+                    }
+                    else
+                    {
+                        out2<<line<<std::endl;
+                    }
+                }
+            }
+            in1.close();
+            out2.close();
+            rename(R"(C:\Users\Public\include\data_clients.txt)", R"(C:\Users\Public\include\popa.txt)");
+            rename(R"(C:\Users\Public\include\temporary_data_clients.txt)", R"(C:\Users\Public\include\data_clients.txt)");
+            rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_data_clients.txt)");
+            std::ifstream in2(R"(C:\Users\Public\include\names.txt)");
+            std::ofstream out3(R"(C:\Users\Public\include\temporary_names.txt)", std::ios::trunc);
+            if(in2.is_open() && out3.is_open())
+            {
+                while(std::getline(in2,line))
+                {
+                    if(line.find(current_client->name)!=std::string::npos)
+                    {
+                        out3<<user_name<<std::endl;
+                    }
+                    else
+                    {
+                        out3<<line<<std::endl;
+                    }
+                }
+            }
+            in2.close();
+            out3.close();
+            rename(R"(C:\Users\Public\include\names.txt)", R"(C:\Users\Public\include\popa.txt)");
+            rename(R"(C:\Users\Public\include\temporary_names.txt)", R"(C:\Users\Public\include\names.txt)");
+            rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_names.txt)");
+            if (current_client->name!="noname")
+                Broadcast(clientSocket, current_client->name+" сменил имя, теперь он "+user_name);
+            current_client->name=user_name;
+        }
     }
 }
 
@@ -95,6 +311,18 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
         user_email+=text[i];
         i++;
     }
+    if(user_email.empty())
+    {
+        std::string buff="Неправильный формат данных";
+        send(clientSocket, buff.c_str(), buff.size(), 0);
+        return;
+    }
+    if(user_email.find(':')!=std::string::npos)
+    {
+        std::string err="Запрещено использовать ':' в email.";
+        send(clientSocket, err.c_str(), err.size(), 0);
+        return;
+    }
     std::string line;
     std::ifstream in(R"(C:\Users\Public\include\emails.txt)");
     int key=1;
@@ -102,7 +330,6 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
     {
         while(std::getline(in,line))
         {
-            std::cout<<"was opened email1";
             //key=1;
             if (line==user_email)
             {
@@ -122,22 +349,19 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
     {
         if (key)
         {
-            std::cout<<"was there 2";
+            std::lock_guard<std::mutex> lock(clientsMutex);
             std::ofstream out(R"(C:\Users\Public\include\emails.txt)", std::ios::app);
             if (out.is_open())
             {
-                std::cout<<"was there 3";
                 out<<user_email<<std::endl;
             }
             out.close();
             std::ofstream out1(R"(C:\Users\Public\include\data_clients.txt)", std::ios::app);
             if (out1.is_open())
             {
-                std::cout<<"was there 4";
                 out1<<user_email<<":password:noname"<<std::endl;
             }
             out1.close();
-            std::cout<<"was there 5";
             current_client->email=user_email;
         }
     }
@@ -145,36 +369,50 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
     {
         if(key)
         {
-            std::cout<<"wassssssss";
+            std::lock_guard<std::mutex> lock(clientsMutex);
             std::ifstream in1(R"(C:\Users\Public\include\data_clients.txt)");
-            std::ofstream out2(R"(C:\Users\Public\include\temporary_data_clients.txt)");
-            long long position=0;
-            //std::lock_guard<std::mutex> lock(clientsMutex);
+            std::ofstream out2(R"(C:\Users\Public\include\temporary_data_clients.txt)", std::ios::trunc);
             if(in1.is_open() && out2.is_open())
             {
                 while(std::getline(in1,line))
                 {
-                    std::cout<<"lego";
                     if(line.find(current_client->email)!=std::string::npos)
                     {
                         out2<<user_email<<":"<<current_client->password<<":"<<current_client->name<<std::endl;
-                        std::cout<<"sheeesh";
                     }
                     else
                     {
                         out2<<line<<std::endl;
-                        std::cout<<"ppppppp";
                     }
-                    //position++;
                 }
             }
-            std::cout<<rename(R"(C:\Users\Public\include\data_clients.txt)", R"(C:\Users\Public\include\popa.txt)");
-            rename(R"(C:\Users\Public\include\temporary_data_clients.txt)", R"(C:\Users\Public\include\data_clients.txt)");
-            rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_data_clients.txt)");
             in1.close();
             out2.close();
+            rename(R"(C:\Users\Public\include\data_clients.txt)", R"(C:\Users\Public\include\popa.txt)");
+            rename(R"(C:\Users\Public\include\temporary_data_clients.txt)", R"(C:\Users\Public\include\data_clients.txt)");
+            rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_data_clients.txt)");
+            std::ifstream in2(R"(C:\Users\Public\include\emails.txt)");
+            std::ofstream out3(R"(C:\Users\Public\include\temporary_emails.txt)", std::ios::trunc);
+            if(in2.is_open() && out3.is_open())
+            {
+                while(std::getline(in2,line))
+                {
+                    if(line.find(current_client->email)!=std::string::npos)
+                    {
+                        out3<<user_email<<std::endl;
+                    }
+                    else
+                    {
+                        out3<<line<<std::endl;
+                    }
+                }
+            }
+            in2.close();
+            out3.close();
+            rename(R"(C:\Users\Public\include\emails.txt)", R"(C:\Users\Public\include\popa.txt)");
+            rename(R"(C:\Users\Public\include\temporary_emails.txt)", R"(C:\Users\Public\include\emails.txt)");
+            rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_emails.txt)");
             current_client->email=user_email;
-            //TODO CHANGE EMAILS FILE and check about rename
         }
     }
 }
@@ -182,46 +420,135 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
 void set_password(SOCKET clientSocket, const std::string& text, long long i)
 {
     std::string user_password;
-    while(text[i]!='\0')
+    while(text[i]!='\0' && i<text.size())
     {
         user_password+=text[i];
         i++;
     }
+    if(user_password.empty())
+    {
+        std::string buff="Неправильный формат данных";
+        send(clientSocket, buff.c_str(), buff.size(), 0);
+        return;
+    }
+    if(user_password.find(':')!=std::string::npos)
+    {
+        std::string err="Запрещено использовать ':' в пароле.";
+        send(clientSocket, err.c_str(), err.size(), 0);
+        return;
+    }
+    if (user_password.length()<6)
+    {
+        std::string err="Пароль ненадежный. Введите не менее 6 символов.";
+        send(clientSocket, err.c_str(), err.size(), 0);
+        return;
+    }
+    if (user_password=="password")
+    {
+        std::string err="Данный пароль запрещен. Попробуйте другой.";
+        send(clientSocket, err.c_str(), err.size(), 0);
+        return;
+    }
+    Client* current_client= find_client_from_socket(clientSocket);
+    std::string line;
+    std::ifstream in1(R"(C:\Users\Public\include\data_clients.txt)");
+    std::ofstream out2(R"(C:\Users\Public\include\temporary_data_clients.txt)", std::ios::trunc);
+    std::lock_guard<std::mutex> lock(clientsMutex);
+    if(in1.is_open() && out2.is_open())
+    {
+        while(std::getline(in1,line))
+        {
+            if(line.find(current_client->email)!=std::string::npos)
+            {
+                out2<<current_client->email<<":"<<user_password<<":"<<current_client->name<<std::endl;
+            }
+            else
+            {
+                out2<<line<<std::endl;
+            }
+        }
+    }
+    in1.close();
+    out2.close();
+    rename(R"(C:\Users\Public\include\data_clients.txt)", R"(C:\Users\Public\include\popa.txt)");
+    rename(R"(C:\Users\Public\include\temporary_data_clients.txt)", R"(C:\Users\Public\include\data_clients.txt)");
+    rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_data_clients.txt)");
+    current_client->password=user_password;
 }
 
-void registration(SOCKET clientSocket)
+void sign_up(SOCKET clientSocket) //registration
 {
-
+    Client* current_client= find_client_from_socket(clientSocket);
+    current_client->email="email";
+    current_client->name="noname";
+    current_client->password="password";
+    std::string err="Пожалуйста введите email, password и name.";
+    send(clientSocket, err.c_str(), err.size(), 0);
 }
+
+int check_line_from_data(const std::string& line,const std::string& user_email, const std::string& user_password)
+{
+    std::string str;
+    int i=0;
+    while(line[i]!=':')
+    {
+        str+=line[i];
+        i++;
+    }
+    i++;
+    if (str!=user_email)
+        return 0;
+    str.clear();
+    while(line[i]!=':')
+    {
+        str+=line[i];
+        i++;
+    }
+    if (str!=user_password)
+        return 0;
+    return 1;
+}
+
+void sign_in(SOCKET clientSocket,const std::string& user_email, const std::string& user_password, int i) //entry
+{
+    std::ifstream in1(R"(C:\Users\Public\include\data_clients.txt)");
+    std::string line;
+    std::lock_guard<std::mutex> lock(clientsMutex);
+    if(in1.is_open())
+    {
+        while(std::getline(in1,line))
+        {
+            if(check_line_from_data(line, user_email, user_password))
+            {
+                Client* current_client = find_client_from_socket(clientSocket);
+                current_client->email=user_email;
+                current_client->password=user_password;
+                current_client->name=extract_name_from_string(line, i);
+                return;
+            }
+        }
+    }
+    std::string buff="Неверная почта или пароль. Пожалуйста повторите попытку или зарегистрируйтесь.";
+    send(clientSocket, buff.c_str(), buff.size(), 0);
+    in1.close();
+}
+
 
 std::vector<SOCKET> find_socket_from_name(const std::vector<std::string>& send_to_names)
 {
     std::vector<SOCKET> answer;
-    for (int j=0; j<send_to_names.size(); j++)
+    for (const auto & send_to_name : send_to_names)
     {
-        for (int i=0; i<clients.size(); i++)
+        for (auto & client : clients)
         {
-            if (clients[i].name==send_to_names[i])
+            if (client.name==send_to_name)
             {
-                answer.push_back(clients[i].socket);
+                answer.push_back(client.socket);
                 break;
             }
         }
     }
     return answer;
-}
-
-void Broadcast(SOCKET clientSocket, const std::string& mes)
-{
-    std::string name_sender= find_name_from_socket(clientSocket);
-    std::string buff="Сообщение от: "+name_sender+"\n";
-    buff+=mes;
-    for (int i=0; i<clients.size(); i++)
-    {
-        if (clients[i].socket==clientSocket)
-            continue;
-        send(clients[i].socket, buff.c_str(), buff.size(), 0);
-    }
 }
 
 void Group_message(SOCKET clientSocket, const std::string& mes, const std::vector<std::string>& send_to_names)
@@ -230,24 +557,31 @@ void Group_message(SOCKET clientSocket, const std::string& mes, const std::vecto
     std::string name_sender= find_name_from_socket(clientSocket);
     std::string buff="Сообщение от: "+name_sender+"\n";
     buff+=mes;
-    for (int i=0; i<socket_send.size(); i++)
-        send(socket_send[i], buff.c_str(), buff.size(), 0);
+    for (unsigned long long i : socket_send)
+        send(i, buff.c_str(), buff.size(), 0);
 }
 
 void Private_message(SOCKET clientSocket, const std::string& mes, const std::vector<std::string>& send_to_names)
 {
     if (send_to_names.empty() || send_to_names.size()>1)
     {
-        std::string buff="Вы ввели команду pravate, однако кол-во людей кому вы хотите отправить не равно 1\n";
+        std::string buff="Вы ввели команду private, однако кол-во людей кому вы хотите отправить не равно 1\n";
         send(clientSocket, buff.c_str(), buff.size(), 0);
     }
     else
     {
+        print_users();
         std::string name_sender= find_name_from_socket(clientSocket);
         std::string buff="Сообщение от: "+name_sender+"\n";
         buff+=mes;
         std::vector<SOCKET> socket_send=find_socket_from_name(send_to_names);
-        send(socket_send[0], buff.c_str(), buff.size(), 0);
+        if (!socket_send.empty())
+            send(socket_send[0], buff.c_str(), buff.size(), 0);
+        else
+        {
+            buff="Вы хотите отправить сообщение пользователю под именем "+send_to_names[0]+", но такого пользователя не существует.";
+            send(clientSocket, buff.c_str(), buff.size(), 0);
+        }
     }
 }
 
@@ -256,7 +590,7 @@ void Private_message(SOCKET clientSocket, const std::string& mes, const std::vec
 void Reformat_message(SOCKET clientSocket, const std::string& text, std::string& where, std::vector<std::string>& send_to_names, std::string& mes) //0-public,1-private,group
 {
     long long i=0;
-    while(text[i]!=':')
+    while(text[i]!=':' && i<text.size())
     {
         where+=text[i];
         i++;
@@ -280,12 +614,35 @@ void Reformat_message(SOCKET clientSocket, const std::string& text, std::string&
         set_password(clientSocket, text, i);
         return;
     }
+    else if(where=="sign_in")
+    {
+        std::string mail;
+        while(text[i]!=':' && i<text.size())
+        {
+            mail+=text[i];
+            i++;
+        }
+        i++;
+        while(text[i]!='\0' && i<text.size())
+        {
+            mes+=text[i];
+            i++;
+        }
+        if(mail.find(':')!=std::string::npos || mes.find(':')!=std::string::npos)
+        {
+            std::string err="Запрещено использовать ':' в пароле.";
+            send(clientSocket, err.c_str(), err.size(), 0);
+            return;
+        }
+        sign_in(clientSocket, mail, mes, i-7);
+        return;
+    }
     if (key)
     {
-        while(text[i]!=':')
+        while(text[i]!=':' && i<text.size())
         {
             std::string temporary_name;
-            while(text[i]!=',' && text[i]!=':')
+            while(text[i]!=',' && text[i]!=':' && i<text.size())
             {
                 temporary_name+=text[i];
                 i++;
@@ -295,12 +652,19 @@ void Reformat_message(SOCKET clientSocket, const std::string& text, std::string&
                 i++;
         }
         i++;
+        if (send_to_names.empty())
+        {
+            where="";
+            return;
+        }
     }
-    while(text[i]!='\0')
+    while(text[i]!='\0' && i<text.size())
     {
         mes+=text[i];
         i++;
     }
+    if (mes.empty())
+        where="";
 }
 
 
@@ -315,22 +679,32 @@ void clientHandler(SOCKET clientSocket) {
             std::cout<<"SEND_MESSAGE_ERROR";
             break;
         }
+        buffer.clear();
+        buff[bytesReceived]='\0'; // Добавляем завершающий символ строки
         buffer=buff;
         if (buffer=="exit")
         {
             exit(clientSocket);
-            continue;
+            return;
         }
-        else if (buffer=="registartion")
+        else if (buffer=="sign_up")
         {
-            registration(clientSocket);
+            sign_up(clientSocket);
             continue;
         }
-        buffer[bytesReceived] = '\0'; // Добавляем завершающий символ строки
-        buff[bytesReceived]='\0';
-        std::string where="";
+        else if(buffer=="end_registration")
+        {
+            end_registration(clientSocket);
+            continue;
+        }
+        else if(buffer=="end_entry")
+        {
+            end_entry(clientSocket);
+            continue;
+        }
+        std::string where;
         std::vector<std::string> send_to_names;
-        std::string mes="";
+        std::string mes;
         Reformat_message(clientSocket, buffer, where, send_to_names, mes);
         if (where=="public")
         {
@@ -344,7 +718,7 @@ void clientHandler(SOCKET clientSocket) {
         {
             Private_message(clientSocket, mes, send_to_names);
         }
-        else if (where=="set_name" || where=="set_email" || where=="set_password")
+        else if (where=="set_name" || where=="set_email" || where=="set_password" || where=="sign_in" || where=="sign_up")
             continue;
         else
         {
@@ -355,17 +729,17 @@ void clientHandler(SOCKET clientSocket) {
     }
 
     // Удаляем клиента из списка после завершения соединения
-    {
-        std::lock_guard<std::mutex> lock(clientsMutex);
-        for (auto it = clients.begin(); it != clients.end(); ++it) {
-            if (it->socket == clientSocket) {
-                clients.erase(it);
-                break;
-            }
-        }
-    }
+//    {
+//        std::lock_guard<std::mutex> lock(clientsMutex);
+//        for (auto it = clients.begin(); it != clients.end(); ++it) {
+//            if (it->socket == clientSocket) {
+//                clients.erase(it);
+//                break;
+//            }
+//        }
+//    }
 
-    closesocket(clientSocket);
+    //closesocket(clientSocket);
 }
 
 int main() {
@@ -392,7 +766,7 @@ int main() {
 
     while (true) {
         // Принятие нового подключения
-        SOCKET clientSocket = accept(serverSocket, NULL, NULL);
+        SOCKET clientSocket = accept(serverSocket, nullptr, nullptr);
         // Добавление клиента в список
         std::lock_guard<std::mutex> lock(clientsMutex);
         Client temporary_client;
