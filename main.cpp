@@ -5,15 +5,148 @@
 #include <winsock2.h>
 #include "Client.h"
 #include <fstream>
+#include <filesystem>
 #include <cstdio>
-//TODO CHANGE CHAR TO STRING EVERYWHERE!!!!!!!!!!! check format of email, –∑–∞–ø—Ä–µ—â–∞—Ç—å –ø–∏—Å–∞—Ç—å —Å–æ–æ–±—â–µ–Ω–∏–µ –µ—Å–ª–∏ –Ω–µ –∑–∞—à–ª–∏ –≤ –∞–∫–∫, –µ—Å–ª–∏ –Ω–µ—Ç —Ç–∞–∫–æ–≥–æ –∏–º–µ–Ω–∏–∏ –≤ group —Ç–æ –ø–∏—Å–∞—Ç—å, —Ñ—É–Ω–∫—Ü–∏—è show_online, –∏—Å—Ç–æ—Ä–∏—è —Å–æ–æ–±—â–µ–Ω–∏–π
+#include <algorithm>
 
+//TODO CHANGE CHAR TO STRING EVERYWHERE!!!!!!!!!!! check format of email, ß†Ø‡•È†‚Ï Ø®·†‚Ï ·ÆÆ°È•≠®• •·´® ≠• ß†Ë´® ¢ †™™, •·´® ≠•‚ ‚†™Æ£Æ ®¨•≠®® ¢ group ‚Æ Ø®·†‚Ï, ‰„≠™Ê®Ô show_online, ®·‚Æ‡®Ô ·ÆÆ°È•≠®©
 
+namespace fs = std::filesystem;
 
 std::vector<Client> clients;
 std::mutex clientsMutex;
 
+void show_history(SOCKET clientSocket, const std::vector<std::string>& filenames)
+{
+    std::string directory = "C:\\Users\\Public\\include";
+    std::string fullPath;
+    for(int i=0; i<filenames.size(); i++)
+    {
+        fullPath = directory + "\\" + filenames[i];
+        if (fs::exists(fullPath)) {
+            std::string line;
+            std::ifstream in(fullPath);
+            if(in.is_open())
+            {
+                int i=0;
+                while(std::getline(in,line))
+                {
+                    i++;
+                    if(i%2==0)
+                        line+="\n";
+                    send(clientSocket, line.c_str(), line.size(), 0);
+                }
+            }
+            return;
+        }
+    }
+    std::string err="í†™Æ£Æ Á†‚† ≠• ·„È•·‚¢„•‚.";
+    send(clientSocket, err.c_str(), err.size(), 0);
+}
 
+void delete_history(SOCKET clientSocket, const std::vector<std::string>& filenames)
+{
+    std::string directory = "C:\\Users\\Public\\include";
+    for (const auto& filename : filenames) {
+        std::string fullPath = directory + "\\" + filename;
+        if (fs::exists(fullPath)) {
+            try {
+                fs::remove(fullPath);
+                std::cout << "Deleted file: " << fullPath << std::endl;
+                std::string err="à·‚Æ‡®Ô Á†‚† „·Ø•Ë≠Æ ÆÁ®È•≠†!";
+                send(clientSocket, err.c_str(), err.size(), 0);
+            } catch (const fs::filesystem_error& e) {
+                std::cerr << "Failed to delete file: " << fullPath << " - " << e.what() << std::endl;
+                std::string err="ç• ØÆ´„Á®´Æ·Ï ÆÁ®·‚®‚Ï ®·‚Æ‡®Ó.";
+                send(clientSocket, err.c_str(), err.size(), 0);
+            }
+            return;
+        }
+    }
+    std::string err="í†™Æ£Æ Á†‚† ≠• ·„È•·‚¢„•‚.";
+    send(clientSocket, err.c_str(), err.size(), 0);
+}
+
+void show_online(SOCKET clientSocket)
+{
+    std::string buff="Ç §†≠≠Î© ¨Æ¨•≠‚ ≠† ·•‡¢•‡•: ";
+    for (const auto & client : clients)
+    {
+        if(!(client.socket==clientSocket || client.name=="noname"))
+            buff=buff+client.name+" ";
+    }
+    send(clientSocket, buff.c_str(), buff.size(), 0);
+}
+
+void History_of_chats(const std::string& message, const std::vector<std::string>& filenames) {
+    // éØ‡•§•´Ô•¨ Ø„‚Ï ™ §®‡•™‚Æ‡®® ® ØÆ´≠Æ• ®¨Ô ‰†©´†
+    std::string directory = "C:\\Users\\Public\\include";
+    std::string fullPath;
+    for(int i=0; i<filenames.size(); i++)
+    {
+        fullPath = directory + "\\" + filenames[i];
+        if (fs::exists(fullPath)) {
+            // î†©´ ·„È•·‚¢„•‚, Æ‚™‡Î¢†•¨ •£Æ ¢ ‡•¶®¨• §Æ°†¢´•≠®Ô
+            std::ofstream outFile(fullPath, std::ios::app);
+            if (outFile.is_open()) {
+                outFile << message << std::endl;
+                std::cout << "Message appended to the file." << std::endl;
+            } else {
+                std::cerr << "Failed to open the file for appending." << std::endl;
+            }
+            return;
+        }
+    }
+    // î†©´ ≠• ·„È•·‚¢„•‚, ·Æß§†•¨ ≠Æ¢Î© ‰†©´ ® ß†Ø®·Î¢†•¨ ·ÆÆ°È•≠®•
+    std::ofstream outFile(fullPath);
+    if (outFile.is_open()) {
+        outFile << message << std::endl;
+        std::cout << "File created and message written." << std::endl;
+    } else {
+        std::cerr << "Failed to create the file." << std::endl;
+    }
+}
+
+// î„≠™Ê®Ô §´Ô ‡†ß§•´•≠®Ô ·‚‡Æ™® ØÆ ß†§†≠≠Æ¨„ ·®¨¢Æ´„-‡†ß§•´®‚•´Ó
+std::vector<std::string> split(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::string token;
+    for (char ch : str) {
+        if (ch == delimiter) {
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+        } else {
+            token += ch;
+        }
+    }
+    if (!token.empty()) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+// î„≠™Ê®Ô §´Ô £•≠•‡†Ê®® ¢·•Â Ø•‡•·‚†≠Æ¢Æ™ ®¨•≠
+std::vector<std::string> generatePermutations(const std::string& input) {
+    std::vector<std::string> names = split(input, '%');
+    std::vector<std::string> permutations;
+
+    // É•≠•‡†Ê®Ô ¢·•Â ¢Æß¨Æ¶≠ÎÂ Ø•‡•·‚†≠Æ¢Æ™
+    std::sort(names.begin(), names.end());
+    do {
+        std::string permutedString;
+        for (size_t i = 0; i < names.size(); ++i) {
+            permutedString += names[i];
+            if (i != names.size() - 1) {
+                permutedString += '%';
+            }
+        }
+        permutations.push_back(permutedString);
+    } while (std::next_permutation(names.begin(), names.end()));
+
+    return permutations;
+}
 
 void print_users()
 {
@@ -61,13 +194,14 @@ void end_registration(SOCKET clientSocket)
     Client* current_client= find_client_from_socket(clientSocket);
     if (current_client->email=="email" || current_client->password=="password" || current_client->name=="noname")
     {
-        std::string buff="–î–ª—è –æ–∫–æ–Ω—á–∞–Ω–∏—è —Ä–µ–≥–∏—Å—Ç—Ä–∞—Ü–∏–∏ –≤–≤–µ–¥–∏—Ç–µ –≤—Å–µ –¥–∞–Ω–Ω—ã–µ.";
+        std::string buff="Ñ´Ô Æ™Æ≠Á†≠®Ô ‡•£®·‚‡†Ê®® ¢¢•§®‚• ¢·• §†≠≠Î•.";
         send(clientSocket, buff.c_str(), buff.size(), 0);
         return;
     }
-    std::string mes=current_client->name+" –∑–∞—Ä–µ–≥–∏—Å—Ç—Ä–∏—Ä–æ–≤–∞–ª—Å—è –∏ –ø–æ–¥–∫–ª—é—á–∏–ª—Å—è –∫ —Å–µ—Ä–≤–µ—Ä—É." ;
-    std::string buff="–í—ã —É—Å–ø–µ—à–Ω–æ –∑–∞—Ä–µ–≥–∏—Å—Ç—Ä–∏—Ä–æ–≤–∞–ª–∏—Å—å! –î–æ–±—Ä–æ –ø–æ–∂–∞–ª–æ–≤–∞—Ç—å "+current_client->name;
+    std::string mes=current_client->name+" ß†‡•£®·‚‡®‡Æ¢†´·Ô ® ØÆ§™´ÓÁ®´·Ô ™ ·•‡¢•‡„." ;
+    std::string buff="ÇÎ „·Ø•Ë≠Æ ß†‡•£®·‚‡®‡Æ¢†´®·Ï! ÑÆ°‡Æ ØÆ¶†´Æ¢†‚Ï "+current_client->name;
     send(clientSocket, buff.c_str(), buff.size(), 0);
+    show_online(clientSocket);
     for (auto & client : clients)
     {
         if (client.socket==clientSocket)
@@ -81,9 +215,10 @@ void end_registration(SOCKET clientSocket)
 void end_entry(SOCKET clientSocket)
 {
     Client* current_client= find_client_from_socket(clientSocket);
-    std::string mes=current_client->name+" –ø–æ–¥–∫–ª—é—á–∏–ª—Å—è –∫ —Å–µ—Ä–≤–µ—Ä—É." ;
-    std::string buff="–í—ã —É—Å–ø–µ—à–Ω–æ –≤–æ—à–ª–∏ –≤ —Å–≤–æ–π –ø—Ä–æ—Ñ–∏–ª—å! –° –≤–æ–∑–≤—Ä–∞—â–µ–Ω–∏–µ–º "+current_client->name+"!)";
+    std::string mes=current_client->name+" ØÆ§™´ÓÁ®´·Ô ™ ·•‡¢•‡„." ;
+    std::string buff="ÇÎ „·Ø•Ë≠Æ ¢ÆË´® ¢ ·¢Æ© Ø‡Æ‰®´Ï! ë ¢Æß¢‡†È•≠®•¨ "+current_client->name+"!)";
     send(clientSocket, buff.c_str(), buff.size(), 0);
+    show_online(clientSocket);
     for (auto & client : clients)
     {
         if (client.socket==clientSocket)
@@ -141,7 +276,7 @@ void exit(SOCKET clientSocket)
     {
         if (client.email=="email" || client.password=="password" || client.name=="noname")
             continue;
-        std::string mes= "–ü–æ–ª—å–∑–æ–≤–∞—Ç–µ–ª—å " +user_name+" –≤—ã—à–µ–ª.";
+        std::string mes= "èÆ´ÏßÆ¢†‚•´Ï " +user_name+" ¢ÎË•´.";
         send(client.socket, mes.c_str(), mes.size(), 0);
     }
     closesocket(clientSocket);
@@ -150,7 +285,7 @@ void exit(SOCKET clientSocket)
 void Broadcast(SOCKET clientSocket, const std::string& mes)
 {
     std::string name_sender= find_name_from_socket(clientSocket);
-    std::string buff=name_sender+":\n";
+    std::string buff="Public chat. "+name_sender+":\n";
     buff+=mes;
     for (auto & client : clients)
     {
@@ -160,6 +295,9 @@ void Broadcast(SOCKET clientSocket, const std::string& mes)
             continue;
         send(client.socket, buff.c_str(), buff.size(), 0);
     }
+    std::vector<std::string> filenames;
+    filenames.push_back("public");
+    History_of_chats(buff, filenames);
 }
 
 void set_name(SOCKET clientSocket, const std::string& text, long long i)
@@ -173,19 +311,19 @@ void set_name(SOCKET clientSocket, const std::string& text, long long i)
     }
     if(user_name.empty())
     {
-        std::string buff="–ù–µ–ø—Ä–∞–≤–∏–ª—å–Ω—ã–π —Ñ–æ—Ä–º–∞—Ç –¥–∞–Ω–Ω—ã—Ö";
+        std::string buff="ç•Ø‡†¢®´Ï≠Î© ‰Æ‡¨†‚ §†≠≠ÎÂ";
         send(clientSocket, buff.c_str(), buff.size(), 0);
         return;
     }
     if(user_name.find(':')!=std::string::npos)
     {
-        std::string err="–ó–∞–ø—Ä–µ—â–µ–Ω–æ –∏—Å–ø–æ–ª—å–∑–æ–≤–∞—Ç—å ':' –≤ –∏–º–µ–Ω–∏.";
+        std::string err="á†Ø‡•È•≠Æ ®·ØÆ´ÏßÆ¢†‚Ï ':' ¢ ®¨•≠®.";
         send(clientSocket, err.c_str(), err.size(), 0);
         return;
     }
     if (user_name=="noname")
     {
-        std::string err="–î–∞–Ω–Ω–æ–µ –∏–º—è –∑–∞–ø—Ä–µ—â–µ–Ω–æ –∏—Å–ø–æ–ª—å–∑–æ–≤–∞—Ç—å. –ü–æ–ø—Ä–æ–±—É–π—Ç–µ –¥—Ä—É–≥–æ–µ.";
+        std::string err="Ñ†≠≠Æ• ®¨Ô ß†Ø‡•È•≠Æ ®·ØÆ´ÏßÆ¢†‚Ï. èÆØ‡Æ°„©‚• §‡„£Æ•.";
         send(clientSocket, err.c_str(), err.size(), 0);
         return;
     }
@@ -200,7 +338,7 @@ void set_name(SOCKET clientSocket, const std::string& text, long long i)
             if (line==user_name)
             {
                 key=0;
-                std::string err="–î–∞–Ω–Ω–æ–µ –∏–º—è —É–∂–µ –∏—Å–ø–æ–ª—å–∑—É–µ—Ç—Å—è. –ü–æ–ø—Ä–æ–±—É–π—Ç–µ –¥—Ä—É–≥–æ–µ.";
+                std::string err="Ñ†≠≠Æ• ®¨Ô „¶• ®·ØÆ´Ïß„•‚·Ô. èÆØ‡Æ°„©‚• §‡„£Æ•.";
                 send(clientSocket, err.c_str(), err.size(), 0);
                 return;
             }
@@ -208,7 +346,7 @@ void set_name(SOCKET clientSocket, const std::string& text, long long i)
     }
     else
     {
-        std::cout<<"–ù–µ –ø–æ–ª—É—á–∏–ª–æ—Å—å –æ—Ç–∫—Ä—ã—Ç—å —Ñ–∞–π–ª names.txt";
+        std::cout<<"ç• ØÆ´„Á®´Æ·Ï Æ‚™‡Î‚Ï ‰†©´ names.txt";
     }
     in.close();
     if (current_client->name=="noname")
@@ -244,7 +382,7 @@ void set_name(SOCKET clientSocket, const std::string& text, long long i)
             rename(R"(C:\Users\Public\include\temporary_data_clients.txt)", R"(C:\Users\Public\include\data_clients.txt)");
             rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_data_clients.txt)");
             if (current_client->name!="noname")
-                Broadcast(clientSocket, current_client->name+" —Å–º–µ–Ω–∏–ª –∏–º—è, —Ç–µ–ø–µ—Ä—å –æ–Ω "+user_name);
+                Broadcast(clientSocket, current_client->name+" ·¨•≠®´ ®¨Ô, ‚•Ø•‡Ï Æ≠ "+user_name);
             current_client->name=user_name;
         }
     }
@@ -296,7 +434,7 @@ void set_name(SOCKET clientSocket, const std::string& text, long long i)
             rename(R"(C:\Users\Public\include\temporary_names.txt)", R"(C:\Users\Public\include\names.txt)");
             rename(R"(C:\Users\Public\include\popa.txt)", R"(C:\Users\Public\include\temporary_names.txt)");
             if (current_client->name!="noname")
-                Broadcast(clientSocket, current_client->name+" —Å–º–µ–Ω–∏–ª –∏–º—è, —Ç–µ–ø–µ—Ä—å –æ–Ω "+user_name);
+                Broadcast(clientSocket, current_client->name+" ·¨•≠®´ ®¨Ô, ‚•Ø•‡Ï Æ≠ "+user_name);
             current_client->name=user_name;
         }
     }
@@ -313,13 +451,13 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
     }
     if(user_email.empty())
     {
-        std::string buff="–ù–µ–ø—Ä–∞–≤–∏–ª—å–Ω—ã–π —Ñ–æ—Ä–º–∞—Ç –¥–∞–Ω–Ω—ã—Ö";
+        std::string buff="ç•Ø‡†¢®´Ï≠Î© ‰Æ‡¨†‚ §†≠≠ÎÂ";
         send(clientSocket, buff.c_str(), buff.size(), 0);
         return;
     }
     if(user_email.find(':')!=std::string::npos)
     {
-        std::string err="–ó–∞–ø—Ä–µ—â–µ–Ω–æ –∏—Å–ø–æ–ª—å–∑–æ–≤–∞—Ç—å ':' –≤ email.";
+        std::string err="á†Ø‡•È•≠Æ ®·ØÆ´ÏßÆ¢†‚Ï ':' ¢ email.";
         send(clientSocket, err.c_str(), err.size(), 0);
         return;
     }
@@ -334,7 +472,7 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
             if (line==user_email)
             {
                 key=0;
-                std::string err="–î–∞–Ω–Ω—ã–π email —É–∂–µ –∏—Å–ø–æ–ª—å–∑—É–µ—Ç—Å—è. –í–æ–π–¥–∏—Ç–µ –≤ —Å–≤–æ–π –∞–∫–∫–∞—É–Ω—Ç –∏–ª–∏ –∑–∞—Ä–µ–≥–∏—Å—Ç—Ä–∏—Ä—É–π—Ç–µ—Å—å –ø–æ–¥ –Ω–æ–≤—ã–º email.";
+                std::string err="Ñ†≠≠Î© email „¶• ®·ØÆ´Ïß„•‚·Ô. ÇÆ©§®‚• ¢ ·¢Æ© †™™†„≠‚ ®´® ß†‡•£®·‚‡®‡„©‚•·Ï ØÆ§ ≠Æ¢Î¨ email.";
                 send(clientSocket, err.c_str(), err.size(), 0);
                 break;
             }
@@ -342,7 +480,7 @@ void set_email(SOCKET clientSocket, const std::string& text, long long i)
     }
     else
     {
-        std::cout<<"–ù–µ –ø–æ–ª—É—á–∏–ª–æ—Å—å –æ—Ç–∫—Ä—ã—Ç—å —Ñ–∞–π–ª emails.txt";
+        std::cout<<"ç• ØÆ´„Á®´Æ·Ï Æ‚™‡Î‚Ï ‰†©´ emails.txt";
     }
     in.close();
     if (current_client->email=="email")
@@ -427,25 +565,25 @@ void set_password(SOCKET clientSocket, const std::string& text, long long i)
     }
     if(user_password.empty())
     {
-        std::string buff="–ù–µ–ø—Ä–∞–≤–∏–ª—å–Ω—ã–π —Ñ–æ—Ä–º–∞—Ç –¥–∞–Ω–Ω—ã—Ö";
+        std::string buff="ç•Ø‡†¢®´Ï≠Î© ‰Æ‡¨†‚ §†≠≠ÎÂ";
         send(clientSocket, buff.c_str(), buff.size(), 0);
         return;
     }
     if(user_password.find(':')!=std::string::npos)
     {
-        std::string err="–ó–∞–ø—Ä–µ—â–µ–Ω–æ –∏—Å–ø–æ–ª—å–∑–æ–≤–∞—Ç—å ':' –≤ –ø–∞—Ä–æ–ª–µ.";
+        std::string err="á†Ø‡•È•≠Æ ®·ØÆ´ÏßÆ¢†‚Ï ':' ¢ Ø†‡Æ´•.";
         send(clientSocket, err.c_str(), err.size(), 0);
         return;
     }
     if (user_password.length()<6)
     {
-        std::string err="–ü–∞—Ä–æ–ª—å –Ω–µ–Ω–∞–¥–µ–∂–Ω—ã–π. –í–≤–µ–¥–∏—Ç–µ –Ω–µ –º–µ–Ω–µ–µ 6 —Å–∏–º–≤–æ–ª–æ–≤.";
+        std::string err="è†‡Æ´Ï ≠•≠†§•¶≠Î©. Ç¢•§®‚• ≠• ¨•≠•• 6 ·®¨¢Æ´Æ¢.";
         send(clientSocket, err.c_str(), err.size(), 0);
         return;
     }
     if (user_password=="password")
     {
-        std::string err="–î–∞–Ω–Ω—ã–π –ø–∞—Ä–æ–ª—å –∑–∞–ø—Ä–µ—â–µ–Ω. –ü–æ–ø—Ä–æ–±—É–π—Ç–µ –¥—Ä—É–≥–æ–π.";
+        std::string err="Ñ†≠≠Î© Ø†‡Æ´Ï ß†Ø‡•È•≠. èÆØ‡Æ°„©‚• §‡„£Æ©.";
         send(clientSocket, err.c_str(), err.size(), 0);
         return;
     }
@@ -482,7 +620,7 @@ void sign_up(SOCKET clientSocket) //registration
     current_client->email="email";
     current_client->name="noname";
     current_client->password="password";
-    std::string err="–ü–æ–∂–∞–ª—É–π—Å—Ç–∞ –≤–≤–µ–¥–∏—Ç–µ email, password –∏ name.";
+    std::string err="èÆ¶†´„©·‚† ¢¢•§®‚• email, password ® name.";
     send(clientSocket, err.c_str(), err.size(), 0);
 }
 
@@ -528,7 +666,7 @@ void sign_in(SOCKET clientSocket,const std::string& user_email, const std::strin
             }
         }
     }
-    std::string buff="–ù–µ–≤–µ—Ä–Ω–∞—è –ø–æ—á—Ç–∞ –∏–ª–∏ –ø–∞—Ä–æ–ª—å. –ü–æ–∂–∞–ª—É–π—Å—Ç–∞ –ø–æ–≤—Ç–æ—Ä–∏—Ç–µ –ø–æ–ø—ã—Ç–∫—É –∏–ª–∏ –∑–∞—Ä–µ–≥–∏—Å—Ç—Ä–∏—Ä—É–π—Ç–µ—Å—å.";
+    std::string buff="ç•¢•‡≠†Ô ØÆÁ‚† ®´® Ø†‡Æ´Ï. èÆ¶†´„©·‚† ØÆ¢‚Æ‡®‚• ØÆØÎ‚™„ ®´® ß†‡•£®·‚‡®‡„©‚•·Ï.";
     send(clientSocket, buff.c_str(), buff.size(), 0);
     in1.close();
 }
@@ -555,31 +693,46 @@ void Group_message(SOCKET clientSocket, const std::string& mes, const std::vecto
 {
     std::vector<SOCKET> socket_send=find_socket_from_name(send_to_names);
     std::string name_sender= find_name_from_socket(clientSocket);
-    std::string buff="–°–æ–æ–±—â–µ–Ω–∏–µ –æ—Ç: "+name_sender+"\n";
+    std::string group_users=name_sender+" ";
+    for(int i=0; i<send_to_names.size(); i++)
+        group_users=group_users+send_to_names[i]+" ";
+    std::string buff="Group: "+group_users+"\n"+name_sender+":\n";
     buff+=mes;
     for (unsigned long long i : socket_send)
         send(i, buff.c_str(), buff.size(), 0);
+    std::string input=name_sender;
+    for(const auto & send_to_name : send_to_names)
+        input=input+"%"+send_to_name;
+    std::vector<std::string> result = generatePermutations(input);
+    History_of_chats(buff, result);
 }
 
 void Private_message(SOCKET clientSocket, const std::string& mes, const std::vector<std::string>& send_to_names)
 {
     if (send_to_names.empty() || send_to_names.size()>1)
     {
-        std::string buff="–í—ã –≤–≤–µ–ª–∏ –∫–æ–º–∞–Ω–¥—É private, –æ–¥–Ω–∞–∫–æ –∫–æ–ª-–≤–æ –ª—é–¥–µ–π –∫–æ–º—É –≤—ã —Ö–æ—Ç–∏—Ç–µ –æ—Ç–ø—Ä–∞–≤–∏—Ç—å –Ω–µ —Ä–∞–≤–Ω–æ 1\n";
+        std::string buff="ÇÎ ¢¢•´® ™Æ¨†≠§„ private, Æ§≠†™Æ ™Æ´-¢Æ ´Ó§•© ™Æ¨„ ¢Î ÂÆ‚®‚• Æ‚Ø‡†¢®‚Ï ≠• ‡†¢≠Æ 1\n";
         send(clientSocket, buff.c_str(), buff.size(), 0);
     }
     else
     {
         print_users();
         std::string name_sender= find_name_from_socket(clientSocket);
-        std::string buff="–°–æ–æ–±—â–µ–Ω–∏–µ –æ—Ç: "+name_sender+"\n";
+        std::string buff="Private chat. "+name_sender+":\n";
         buff+=mes;
         std::vector<SOCKET> socket_send=find_socket_from_name(send_to_names);
         if (!socket_send.empty())
+        {
             send(socket_send[0], buff.c_str(), buff.size(), 0);
+            std::string input=name_sender;
+            for(const auto & send_to_name : send_to_names)
+                input=input+"%"+send_to_name;
+            std::vector<std::string> result = generatePermutations(input);
+            History_of_chats(buff, result);
+        }
         else
         {
-            buff="–í—ã —Ö–æ—Ç–∏—Ç–µ –æ—Ç–ø—Ä–∞–≤–∏—Ç—å —Å–æ–æ–±—â–µ–Ω–∏–µ –ø–æ–ª—å–∑–æ–≤–∞—Ç–µ–ª—é –ø–æ–¥ –∏–º–µ–Ω–µ–º "+send_to_names[0]+", –Ω–æ —Ç–∞–∫–æ–≥–æ –ø–æ–ª—å–∑–æ–≤–∞—Ç–µ–ª—è –Ω–µ —Å—É—â–µ—Å—Ç–≤—É–µ—Ç.";
+            buff="ÇÎ ÂÆ‚®‚• Æ‚Ø‡†¢®‚Ï ·ÆÆ°È•≠®• ØÆ´ÏßÆ¢†‚•´Ó ØÆ§ ®¨•≠•¨ "+send_to_names[0]+", ≠Æ ‚†™Æ£Æ ØÆ´ÏßÆ¢†‚•´Ô ≠• ·„È•·‚¢„•‚.";
             send(clientSocket, buff.c_str(), buff.size(), 0);
         }
     }
@@ -614,6 +767,47 @@ void Reformat_message(SOCKET clientSocket, const std::string& text, std::string&
         set_password(clientSocket, text, i);
         return;
     }
+    else if(where=="show_online")
+    {
+        show_online(clientSocket);
+        return;
+    }
+    else if(where=="show_history")
+    {
+        std::string chat;
+        while(text[i]!='\0')
+        {
+            chat+=text[i];
+            i++;
+        }
+        if(chat.find(find_name_from_socket(clientSocket))==std::string::npos && chat!="public")
+        {
+            std::string err="ì ¢†· ≠•‚ §Æ·‚„Ø† ™ Ì‚Æ¨„ Á†‚„.";
+            send(clientSocket, err.c_str(), err.size(), 0);
+            return;
+        }
+        std::vector<std::string> result = generatePermutations(chat);
+        show_history(clientSocket, result);
+        return;
+    }
+    else if(where=="delete_history")
+    {
+        std::string chat;
+        while(text[i]!='\0')
+        {
+            chat+=text[i];
+            i++;
+        }
+        if(chat.find(find_name_from_socket(clientSocket))==std::string::npos)
+        {
+            std::string err="ì ¢†· ≠•‚ §Æ·‚„Ø† ™ Ì‚Æ¨„ Á†‚„.";
+            send(clientSocket, err.c_str(), err.size(), 0);
+            return;
+        }
+        std::vector<std::string> result = generatePermutations(chat);
+        delete_history(clientSocket, result);
+        return;
+    }
     else if(where=="sign_in")
     {
         std::string mail;
@@ -630,7 +824,7 @@ void Reformat_message(SOCKET clientSocket, const std::string& text, std::string&
         }
         if(mail.find(':')!=std::string::npos || mes.find(':')!=std::string::npos)
         {
-            std::string err="–ó–∞–ø—Ä–µ—â–µ–Ω–æ –∏—Å–ø–æ–ª—å–∑–æ–≤–∞—Ç—å ':' –≤ –ø–∞—Ä–æ–ª–µ.";
+            std::string err="á†Ø‡•È•≠Æ ®·ØÆ´ÏßÆ¢†‚Ï ':' ¢ Ø†‡Æ´•.";
             send(clientSocket, err.c_str(), err.size(), 0);
             return;
         }
@@ -669,8 +863,8 @@ void Reformat_message(SOCKET clientSocket, const std::string& text, std::string&
 
 
 void clientHandler(SOCKET clientSocket) {
-    // –û–±—Ä–∞–±–æ—Ç–∫–∞ –∫–ª–∏–µ–Ω—Ç–∞
-    // –ü—Ä–∏–º–µ—Ä —á—Ç–µ–Ω–∏—è —Å–æ–æ–±—â–µ–Ω–∏–π –æ—Ç –∫–ª–∏–µ–Ω—Ç–∞ –∏ –æ—Ç–ø—Ä–∞–≤–∫–∏ –æ—Ç–≤–µ—Ç–æ–≤
+    // é°‡†°Æ‚™† ™´®•≠‚†
+    // è‡®¨•‡ Á‚•≠®Ô ·ÆÆ°È•≠®© Æ‚ ™´®•≠‚† ® Æ‚Ø‡†¢™® Æ‚¢•‚Æ¢
     std::string buffer;
     char buff[1024];
     while (true) {
@@ -680,7 +874,7 @@ void clientHandler(SOCKET clientSocket) {
             break;
         }
         buffer.clear();
-        buff[bytesReceived]='\0'; // –î–æ–±–∞–≤–ª—è–µ–º –∑–∞–≤–µ—Ä—à–∞—é—â–∏–π —Å–∏–º–≤–æ–ª —Å—Ç—Ä–æ–∫–∏
+        buff[bytesReceived]='\0'; // ÑÆ°†¢´Ô•¨ ß†¢•‡Ë†ÓÈ®© ·®¨¢Æ´ ·‚‡Æ™®
         buffer=buff;
         if (buffer=="exit")
         {
@@ -718,17 +912,17 @@ void clientHandler(SOCKET clientSocket) {
         {
             Private_message(clientSocket, mes, send_to_names);
         }
-        else if (where=="set_name" || where=="set_email" || where=="set_password" || where=="sign_in" || where=="sign_up")
+        else if (where=="set_name" || where=="set_email" || where=="set_password" || where=="sign_in" || where=="sign_up" || where=="show_online" || where=="delete_history" || where=="show_history")
             continue;
         else
         {
-            std::string err="–ù–µ–ø—Ä–∞–≤–∏–ª—å–Ω—ã–π —Ñ–æ—Ä–º–∞—Ç –¥–∞–Ω–Ω—ã—Ö";
+            std::string err="ç•Ø‡†¢®´Ï≠Î© ‰Æ‡¨†‚ §†≠≠ÎÂ";
             send(clientSocket, err.c_str(), err.size(), 0);
             std::cout<<"Wrong format";
         }
     }
 
-    // –£–¥–∞–ª—è–µ–º –∫–ª–∏–µ–Ω—Ç–∞ –∏–∑ —Å–ø–∏—Å–∫–∞ –ø–æ—Å–ª–µ –∑–∞–≤–µ—Ä—à–µ–Ω–∏—è —Å–æ–µ–¥–∏–Ω–µ–Ω–∏—è
+    // ì§†´Ô•¨ ™´®•≠‚† ®ß ·Ø®·™† ØÆ·´• ß†¢•‡Ë•≠®Ô ·Æ•§®≠•≠®Ô
 //    {
 //        std::lock_guard<std::mutex> lock(clientsMutex);
 //        for (auto it = clients.begin(); it != clients.end(); ++it) {
@@ -743,47 +937,47 @@ void clientHandler(SOCKET clientSocket) {
 }
 
 int main() {
-    // –ò–Ω–∏—Ü–∏–∞–ª–∏–∑–∞—Ü–∏—è Winsock
+    // à≠®Ê®†´®ß†Ê®Ô Winsock
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-    // –°–æ–∑–¥–∞–Ω–∏–µ —Å–æ–∫–µ—Ç–∞ —Å–µ—Ä–≤–µ—Ä–∞
+    // ëÆß§†≠®• ·Æ™•‚† ·•‡¢•‡†
     SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-    // –ù–∞—Å—Ç—Ä–æ–π–∫–∞ –∞–¥—Ä–µ—Å–∞ —Å–µ—Ä–≤–µ—Ä–∞
+    // ç†·‚‡Æ©™† †§‡•·† ·•‡¢•‡†
     SOCKADDR_IN serverAddr;
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     serverAddr.sin_port = htons(8080);
 
-    // –ü—Ä–∏–≤—è–∑–∫–∞ —Å–æ–∫–µ—Ç–∞ –∫ –∞–¥—Ä–µ—Å—É —Å–µ—Ä–≤–µ—Ä–∞
+    // è‡®¢Ôß™† ·Æ™•‚† ™ †§‡•·„ ·•‡¢•‡†
     bind(serverSocket, (SOCKADDR*)&serverAddr, sizeof(serverAddr));
 
-    // –ü—Ä–æ—Å–ª—É—à–∏–≤–∞–Ω–∏–µ –ø–æ–¥–∫–ª—é—á–µ–Ω–∏–π
+    // è‡Æ·´„Ë®¢†≠®• ØÆ§™´ÓÁ•≠®©
     listen(serverSocket, SOMAXCONN);
 
-    std::cout << "–°–µ—Ä–≤–µ—Ä –∑–∞–ø—É—â–µ–Ω. –û–∂–∏–¥–∞–Ω–∏–µ –ø–æ–¥–∫–ª—é—á–µ–Ω–∏–π...\n";
+    std::cout << "ë•‡¢•‡ ß†Ø„È•≠. é¶®§†≠®• ØÆ§™´ÓÁ•≠®©...\n";
 
     while (true) {
-        // –ü—Ä–∏–Ω—è—Ç–∏–µ –Ω–æ–≤–æ–≥–æ –ø–æ–¥–∫–ª—é—á–µ–Ω–∏—è
+        // è‡®≠Ô‚®• ≠Æ¢Æ£Æ ØÆ§™´ÓÁ•≠®Ô
         SOCKET clientSocket = accept(serverSocket, nullptr, nullptr);
-        // –î–æ–±–∞–≤–ª–µ–Ω–∏–µ –∫–ª–∏–µ–Ω—Ç–∞ –≤ —Å–ø–∏—Å–æ–∫
+        // ÑÆ°†¢´•≠®• ™´®•≠‚† ¢ ·Ø®·Æ™
         std::lock_guard<std::mutex> lock(clientsMutex);
         Client temporary_client;
         temporary_client.socket=clientSocket;
         clients.push_back(temporary_client);
-        std::string err="–í–æ–π–¥–∏—Ç–µ –≤ –∞–∫–∫–∞—É–Ω—Ç –∏–ª–∏ –∑–∞—Ä–µ–≥–∏—Å—Ç—Ä–∏—Ä—É–π—Ç–µ—Å—å";
+        std::string err="ÇÆ©§®‚• ¢ †™™†„≠‚ ®´® ß†‡•£®·‚‡®‡„©‚•·Ï";
         send(clientSocket, err.c_str(), err.size(), 0);
 //        for(int i=0; i<clients.size(); i++)
 //            std::cout<<clients[i].email<<":"<<clients[i].password<<":"<<clients[i].name<<"\n";
-        std::cout<<"–ü–æ–¥–∫–ª—é—á–∏–ª—Å—è –Ω–æ–≤—ã–π –∫–ª–∏–µ–Ω—Ç. ID:"<<clients[clients.size()-1].id<<"\n";
+        std::cout<<"èÆ§™´ÓÁ®´·Ô ≠Æ¢Î© ™´®•≠‚. ID:"<<clients[clients.size()-1].id<<"\n";
         std::cout<<"Socket:"<<clientSocket<<"\n";
-        // –ó–∞–ø—É—Å–∫ –æ–±—Ä–∞–±–æ—Ç—á–∏–∫–∞ –∫–ª–∏–µ–Ω—Ç–∞ –≤ –æ—Ç–¥–µ–ª—å–Ω–æ–º –ø–æ—Ç–æ–∫–µ
+        // á†Ø„·™ Æ°‡†°Æ‚Á®™† ™´®•≠‚† ¢ Æ‚§•´Ï≠Æ¨ ØÆ‚Æ™•
         std::thread clientThread(clientHandler, clientSocket);
-        clientThread.detach(); // –û—Ç—Å–æ–µ–¥–∏–Ω—è–µ–º –ø–æ—Ç–æ–∫, —á—Ç–æ–±—ã –Ω–µ –∂–¥–∞—Ç—å –µ–≥–æ –∑–∞–≤–µ—Ä—à–µ–Ω–∏—è
+        clientThread.detach(); // é‚·Æ•§®≠Ô•¨ ØÆ‚Æ™, Á‚Æ°Î ≠• ¶§†‚Ï •£Æ ß†¢•‡Ë•≠®Ô
     }
 
-    // –ó–∞–∫—Ä—ã—Ç–∏–µ —Å–æ–∫–µ—Ç–∞ —Å–µ—Ä–≤–µ—Ä–∞ –∏ –∑–∞–≤–µ—Ä—à–µ–Ω–∏–µ —Ä–∞–±–æ—Ç—ã Winsock
+    // á†™‡Î‚®• ·Æ™•‚† ·•‡¢•‡† ® ß†¢•‡Ë•≠®• ‡†°Æ‚Î Winsock
     closesocket(serverSocket);
     WSACleanup();
 
